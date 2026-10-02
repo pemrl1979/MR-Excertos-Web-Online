@@ -8,7 +8,8 @@ for(const token of [
   "indexedDB.open(RECOVERY_DB,1)",
   "await offerRecoveryIfPresent()",
   "ta.dispatchEvent(new Event('input',{bubbles:true}))",
-  "version:'1.0'"
+  "version:'1.0'",
+  "const preserving=hasProjectData()&&(state.pdf===null||state.pdfName===file.name)"
 ]) assert.ok(app.includes(token),token);
 assert.ok(html.includes('id="recoveryDialog"'));
 assert.ok(html.includes('MR Excertos Web 1.0'));

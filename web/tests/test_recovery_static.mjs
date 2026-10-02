@@ -22,4 +22,6 @@ assert.ok(html.includes('MR Excertos Web 1.0'));
 assert.ok(manual.includes('<h2>Nota de autoria</h2>'));
 assert.ok(manual.includes('Marlon Ramos Lopes'));
 assert.ok(manual.includes('ChatGPT, da OpenAI'));
+assert.ok(manual.includes('mesmo formato de projeto do MR Excertos desktop 1.0'));
+assert.ok(manual.includes('source_sha256'));
 console.log('test_recovery_static.mjs: OK');

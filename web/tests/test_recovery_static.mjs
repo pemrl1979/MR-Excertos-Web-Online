@@ -10,8 +10,10 @@ for(const token of [
   "ta.dispatchEvent(new Event('input',{bubbles:true}))",
   "version:'1.0'",
   "shouldPreserveProjectOnPdfOpen(hasProjectData(),state.pdf,state.pdfName,file.name)",
-  "await hydrateLegacyFacsimiles()",
-  "item.legacyRect||item.rect",
+  "await hydrateProjectFacsimiles()",
+  "projectToCanonical(state)",
+  "projectFromCanonical(JSON.parse(await f.text()))",
+  "currentSelectionPdfRect()",
   "O PDF selecionado não corresponde ao arquivo de origem registrado no projeto.",
   "Não foi possível gerar o ODT: '+errorText(err)"
 ]) assert.ok(app.includes(token),token);

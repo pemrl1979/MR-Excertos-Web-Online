@@ -63,6 +63,10 @@ export function migrateProject(project){
   return p;
 }
 
+export function shouldPreserveProjectOnPdfOpen(hasData,currentPdf,storedPdfName,newPdfName){
+  return !!hasData && (currentPdf===null || storedPdfName===newPdfName);
+}
+
 export const TEXT_STYLES=['Texto litúrgico','Cabeçalho do dia','Antífona','Rubrica','Títulos'];
 export function isTextStyle(style){return TEXT_STYLES.includes(style)}
 export function editorBreak(key,shiftKey,style){

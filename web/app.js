@@ -101,12 +101,16 @@ async function offerRecoveryIfPresent(){
 }
 
 async function loadPdf(file){
-  const preserving=hasProjectData()&&state.pdfName===file.name;
+  const previousPdfName=state.pdfName;
+  const preserving=hasProjectData()&&(state.pdf===null||state.pdfName===file.name);
   const buf=await file.arrayBuffer(); state.pdf=await pdfjsLib.getDocument({data:buf}).promise; state.pdfName=file.name;
   if(!preserving){state.page=1;state.requestedPages=[];state.printedPages={};state.items=[];state.selectedItem=-1;state.pending=null;$('pageRange').value='';$('rangeSummary').textContent='';projectDirty=false}
   state.page=Math.max(1,Math.min(state.pdf.numPages,Number(state.page)||1));
   $('pageNumber').max=state.pdf.numPages;$('pageCount').textContent=`/ ${state.pdf.numPages}`;enableWork(true);updateProjectButtons();await renderPage();
-  if(preserving)setStatus(`${state.pdfName} reaberto — trabalho recuperado disponível para continuar.`);
+  if(preserving){
+    if(previousPdfName&&previousPdfName!==file.name)setStatus(`${file.name} aberto para o projeto anteriormente associado a ${previousPdfName}.`);
+    else setStatus(`${state.pdfName} reaberto — trabalho recuperado disponível para continuar.`);
+  }
 }
 async function renderPage(){
   const page=await state.pdf.getPage(state.page); const viewport=page.getViewport({scale:state.scale});

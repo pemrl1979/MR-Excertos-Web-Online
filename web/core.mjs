@@ -54,8 +54,41 @@ export function numberPrintedInterval(state,pages,startMr){
   ordered.forEach((pdf,i)=>associatePrintedPage(state,pdf,start+i));
 }
 export function migrateProject(project){
-  const p={...project};
-  p.printedPages=p.printedPages||{};p.items=p.items||[];p.requestedPages=p.requestedPages||[];
+  const raw=project||{};
+  const desktop=raw.format!=='MR Excertos Web' && (
+    Object.prototype.hasOwnProperty.call(raw,'page_map') ||
+    Object.prototype.hasOwnProperty.call(raw,'requested_pages') ||
+    Object.prototype.hasOwnProperty.call(raw,'source_pdf') ||
+    (raw.items||[]).some(i=>Object.prototype.hasOwnProperty.call(i||{},'pdf_page')||Object.prototype.hasOwnProperty.call(i||{},'mr_page'))
+  );
+  if(desktop){
+    const printedPages={};
+    for(const [pdf,mr] of Object.entries(raw.page_map||{})){
+      const p=Number(pdf),m=Number(mr);if(p>0&&m>0)printedPages[p]=m;
+    }
+    const styleFor={text:'Texto litúrgico',day_heading:'Cabeçalho do dia',antiphon:'Antífona',rubric:'Rubrica',title:'Títulos',titles:'Títulos'};
+    const items=(raw.items||[]).map((source,index)=>{
+      const i=source||{},kind=i.type;
+      if(kind==='spacer')return {type:'spacer',style:'Espaçador',reviewed:true};
+      const pdfPage=Number(i.pdf_page)||0;
+      const printedPage=Number(i.mr_page)||Number(printedPages[pdfPage])||0;
+      if(kind==='facsimile'){
+        return {type:'facsimile',style:'Fac-símile',pdfPage,printedPage,legacyRect:Array.isArray(i.rect)?i.rect.map(Number):null,reviewed:true,trimWhitespace:i.trim_whitespace!==false};
+      }
+      const style=styleFor[kind];
+      if(!style)throw new Error(`Tipo de trecho do projeto desktop não reconhecido no item ${index+1}: ${kind}`);
+      return {type:'text',style,pdfPage,printedPage,text:String(i.text||''),reviewed:!!i.reviewed,legacyRect:Array.isArray(i.rect)?i.rect.map(Number):null};
+    });
+    const sourcePath=String(raw.source_pdf||'');
+    const pdfName=sourcePath.split(/[\\/]/).filter(Boolean).pop()||'';
+    return {
+      format:'MR Excertos Web',version:'1.0',pdfName,sourceSha256:String(raw.source_sha256||''),
+      printedPages,requestedPages:(raw.requested_pages||[]).map(Number).filter(n=>n>0),
+      items,selectedFont:raw.selected_font||raw.preferred_font||'Times New Roman',importedFromDesktop:true
+    };
+  }
+  const p={...raw};
+  p.printedPages=p.printedPages||{};p.items=p.items||[];p.requestedPages=p.requestedPages||[];p.sourceSha256=p.sourceSha256||'';
   for(const item of p.items){
     const mapped=Number(p.printedPages[item.pdfPage]||0);
     if(mapped>0)item.printedPage=mapped;

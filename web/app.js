@@ -1,5 +1,5 @@
 import * as pdfjsLib from './vendor/pdfjs/pdf.min.mjs';
-import {parsePageSpec,isContiguous,suggestedBaseName,associatePrintedPage,numberPrintedInterval,migrateProject,editorBreak,paragraphGroups} from './core.mjs';
+import {parsePageSpec,isContiguous,suggestedBaseName,associatePrintedPage,numberPrintedInterval,migrateProject,shouldPreserveProjectOnPdfOpen,editorBreak,paragraphGroups} from './core.mjs';
 pdfjsLib.GlobalWorkerOptions.workerSrc='./vendor/pdfjs/pdf.worker.min.mjs';
 
 const $=id=>document.getElementById(id);
@@ -102,7 +102,7 @@ async function offerRecoveryIfPresent(){
 
 async function loadPdf(file){
   const previousPdfName=state.pdfName;
-  const preserving=hasProjectData()&&(state.pdf===null||state.pdfName===file.name);
+  const preserving=shouldPreserveProjectOnPdfOpen(hasProjectData(),state.pdf,state.pdfName,file.name);
   const buf=await file.arrayBuffer(); state.pdf=await pdfjsLib.getDocument({data:buf}).promise; state.pdfName=file.name;
   if(!preserving){state.page=1;state.requestedPages=[];state.printedPages={};state.items=[];state.selectedItem=-1;state.pending=null;$('pageRange').value='';$('rangeSummary').textContent='';projectDirty=false}
   state.page=Math.max(1,Math.min(state.pdf.numPages,Number(state.page)||1));

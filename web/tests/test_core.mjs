@@ -46,6 +46,7 @@ const hybrid=migrateProject({
 });
 assert.equal(hybrid.items[0].pdfPage,10);
 assert.equal(hybrid.items[0].printedPage,300);
+assert.equal(hybrid.printedPages[10],300);
 assert.equal(hybrid.items[0].style,'Texto litúrgico');
 assert.equal(hybrid.items[1].printedPage,400);
 assert.equal(suggestedBaseName(hybrid),'MR_recorte_p300_400');

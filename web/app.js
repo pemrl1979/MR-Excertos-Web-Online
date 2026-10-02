@@ -81,9 +81,10 @@ function scheduleRecovery(){
 function markDirty(){projectDirty=true;updateProjectButtons();scheduleRecovery()}
 async function markClean(){projectDirty=false;updateProjectButtons();if(state.pending)scheduleRecovery();else await clearRecovery()}
 function restoreSerializableState(saved){
-  state.pdf=null;state.pdfName=saved.pdfName||'';state.sourceSha256=saved.sourceSha256||'';state.importedFromDesktop=!!saved.importedFromDesktop;state.page=Number(saved.page)||1;state.scale=Number(saved.scale)||1.45;state.textItems=[];state.selection=null;
-  state.printedPages=saved.printedPages||{};state.requestedPages=saved.requestedPages||[];state.items=saved.items||[];state.selectedItem=Number.isInteger(saved.selectedItem)?saved.selectedItem:(state.items.length?0:-1);
-  state.pending=saved.pending||null;state.selectedFont=saved.selectedFont||'Times New Roman';
+  const normalized=migrateProject(saved||{});
+  state.pdf=null;state.pdfName=normalized.pdfName||'';state.sourceSha256=normalized.sourceSha256||'';state.importedFromDesktop=!!normalized.importedFromDesktop;state.page=Number(saved?.page)||1;state.scale=Number(saved?.scale)||1.45;state.textItems=[];state.selection=null;
+  state.printedPages=normalized.printedPages||{};state.requestedPages=normalized.requestedPages||[];state.items=normalized.items||[];state.selectedItem=Number.isInteger(saved?.selectedItem)?saved.selectedItem:(state.items.length?0:-1);
+  state.pending=saved?.pending||null;state.selectedFont=normalized.selectedFont||'Times New Roman';
 }
 function refreshProjectUiWithoutPdf(){
   enableWork(false);updateProjectButtons();updateFontLabel();$('pageRange').value=(state.requestedPages||[]).join(', ');$('rangeSummary').textContent=state.requestedPages.length?`${state.requestedPages.length} página(s) definidas.`:'';renderDoc();

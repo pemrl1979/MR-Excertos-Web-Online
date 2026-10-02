@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const FONT_PRIORITY=['Times New Roman','Arial','Study-Regular','Lora'];
 const FACSIMILE_DPI=300;
 const LEGACY_FACSIMILE_DPI=72*1.45;
-const state={pdf:null,pdfName:'',page:1,scale:1.45,textItems:[],selection:null,printedPages:{},requestedPages:[],items:[],selectedItem:-1,pending:null,deferredInstall:null,selectedFont:'Times New Roman',availableFonts:[],localFontAccess:'unknown'};
+const state={pdf:null,pdfName:'',sourceSha256:'',importedFromDesktop:false,page:1,scale:1.45,textItems:[],selection:null,printedPages:{},requestedPages:[],items:[],selectedItem:-1,pending:null,deferredInstall:null,selectedFont:'Times New Roman',availableFonts:[],localFontAccess:'unknown'};
 let projectDirty=false;
 let recoveryTimer=null;
 const RECOVERY_DB='mr-excertos-web';
@@ -26,6 +26,12 @@ function normalizeLines(text){return text.split(/\r?\n/).map(l=>l.replace(/^ +/,
 function escapeXml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]))}
 function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
 function pageRangeName(){return suggestedBaseName(state)}
+function errorText(err){if(err instanceof Error&&err.message)return err.message;if(typeof err==='string')return err;try{return JSON.stringify(err)||String(err)}catch{return String(err)}}
+async function sha256Hex(buffer){
+  if(!globalThis.crypto?.subtle)return '';
+  const digest=await crypto.subtle.digest('SHA-256',buffer);
+  return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
 
 function hasUnsavedWork(){return projectDirty||!!state.pending}
 function reviewDraftSnapshot(){
@@ -34,7 +40,7 @@ function reviewDraftSnapshot(){
 }
 function serializableState(){
   return {
-    pdfName:state.pdfName,page:state.page,scale:state.scale,printedPages:state.printedPages,requestedPages:state.requestedPages,
+    pdfName:state.pdfName,sourceSha256:state.sourceSha256,importedFromDesktop:state.importedFromDesktop,page:state.page,scale:state.scale,printedPages:state.printedPages,requestedPages:state.requestedPages,
     items:state.items,selectedItem:state.selectedItem,pending:state.pending,selectedFont:state.selectedFont
   };
 }
@@ -75,7 +81,7 @@ function scheduleRecovery(){
 function markDirty(){projectDirty=true;updateProjectButtons();scheduleRecovery()}
 async function markClean(){projectDirty=false;updateProjectButtons();if(state.pending)scheduleRecovery();else await clearRecovery()}
 function restoreSerializableState(saved){
-  state.pdf=null;state.pdfName=saved.pdfName||'';state.page=Number(saved.page)||1;state.scale=Number(saved.scale)||1.45;state.textItems=[];state.selection=null;
+  state.pdf=null;state.pdfName=saved.pdfName||'';state.sourceSha256=saved.sourceSha256||'';state.importedFromDesktop=!!saved.importedFromDesktop;state.page=Number(saved.page)||1;state.scale=Number(saved.scale)||1.45;state.textItems=[];state.selection=null;
   state.printedPages=saved.printedPages||{};state.requestedPages=saved.requestedPages||[];state.items=saved.items||[];state.selectedItem=Number.isInteger(saved.selectedItem)?saved.selectedItem:(state.items.length?0:-1);
   state.pending=saved.pending||null;state.selectedFont=saved.selectedFont||'Times New Roman';
 }
@@ -103,11 +109,20 @@ async function offerRecoveryIfPresent(){
 async function loadPdf(file){
   const previousPdfName=state.pdfName;
   const preserving=shouldPreserveProjectOnPdfOpen(hasProjectData(),state.pdf,state.pdfName,file.name);
-  const buf=await file.arrayBuffer(); state.pdf=await pdfjsLib.getDocument({data:buf}).promise; state.pdfName=file.name;
-  if(!preserving){state.page=1;state.requestedPages=[];state.printedPages={};state.items=[];state.selectedItem=-1;state.pending=null;$('pageRange').value='';$('rangeSummary').textContent='';projectDirty=false}
+  const buf=await file.arrayBuffer();
+  const loadedSha256=await sha256Hex(buf);
+  if(preserving&&state.sourceSha256&&loadedSha256&&state.sourceSha256.toLowerCase()!==loadedSha256.toLowerCase()){
+    throw new Error('O PDF selecionado não corresponde ao arquivo de origem registrado no projeto.');
+  }
+  state.pdf=await pdfjsLib.getDocument({data:buf}).promise; state.pdfName=file.name;
+  if(!preserving){
+    state.page=1;state.requestedPages=[];state.printedPages={};state.items=[];state.selectedItem=-1;state.pending=null;state.sourceSha256=loadedSha256;state.importedFromDesktop=false;$('pageRange').value='';$('rangeSummary').textContent='';projectDirty=false
+  }else if(!state.sourceSha256)state.sourceSha256=loadedSha256;
   state.page=Math.max(1,Math.min(state.pdf.numPages,Number(state.page)||1));
   $('pageNumber').max=state.pdf.numPages;$('pageCount').textContent=`/ ${state.pdf.numPages}`;enableWork(true);updateProjectButtons();await renderPage();
-  if(preserving){
+  const hydrated=await hydrateLegacyFacsimiles();
+  if(hydrated)setStatus(`Projeto desktop importado: ${hydrated} fac-símile(s) reconstruído(s) a partir do PDF.`);
+  else if(preserving){
     if(previousPdfName&&previousPdfName!==file.name)setStatus(`${file.name} aberto para o projeto anteriormente associado a ${previousPdfName}.`);
     else setStatus(`${state.pdfName} reaberto — trabalho recuperado disponível para continuar.`);
   }
@@ -168,6 +183,34 @@ async function cropSelectionAtDpi(dpi){
   const w=Math.max(1,Math.min(full.width-x,Math.ceil(sw))), h=Math.max(1,Math.min(full.height-y,Math.ceil(sh)));
   const out=document.createElement('canvas');out.width=w;out.height=h;out.getContext('2d').drawImage(full,x,y,w,h,0,0,w,h);return out;
 }
+async function cropPdfRectAtDpi(pdfPage,rect,dpi=FACSIMILE_DPI){
+  if(!state.pdf)throw new Error('Abra o PDF de origem para reconstruir o fac-símile.');
+  if(!Array.isArray(rect)||rect.length!==4)throw new Error('Fac-símile importado sem coordenadas válidas.');
+  const page=await state.pdf.getPage(Number(pdfPage));
+  const base=page.getViewport({scale:1});
+  const target=page.getViewport({scale:dpi/72});
+  const full=document.createElement('canvas');full.width=Math.max(1,Math.round(target.width));full.height=Math.max(1,Math.round(target.height));
+  await page.render({canvasContext:full.getContext('2d'),viewport:target}).promise;
+  const [x0,y0,x1,y1]=rect.map(Number);
+  if(![x0,y0,x1,y1].every(Number.isFinite)||x1<=x0||y1<=y0)throw new Error('Fac-símile importado com coordenadas inválidas.');
+  const sx=full.width/base.width,sy=full.height/base.height;
+  const x=Math.max(0,Math.floor(x0*sx)),y=Math.max(0,Math.floor(y0*sy));
+  const right=Math.min(full.width,Math.ceil(x1*sx)),bottom=Math.min(full.height,Math.ceil(y1*sy));
+  const w=right-x,h=bottom-y;if(w<2||h<2)throw new Error('O recorte do fac-símile importado ficou vazio.');
+  const out=document.createElement('canvas');out.width=w;out.height=h;out.getContext('2d').drawImage(full,x,y,w,h,0,0,w,h);return out;
+}
+async function hydrateLegacyFacsimiles(){
+  let count=0;
+  for(let i=0;i<state.items.length;i++){
+    const item=state.items[i];
+    if(item.type!=='facsimile'||item.image)continue;
+    const rect=item.legacyRect||item.rect;
+    if(!rect)throw new Error(`Fac-símile ${i+1} do projeto importado não possui coordenadas para reconstrução.`);
+    const canvas=await cropPdfRectAtDpi(item.pdfPage,rect,FACSIMILE_DPI);
+    item.image=canvas.toDataURL('image/png');item.imageDpi=FACSIMILE_DPI;item.legacyRect=rect;count++;
+  }
+  return count;
+}
 let ocrWorkerPromise=null;
 async function getOcrWorker(){
   if(!ocrWorkerPromise){
@@ -209,7 +252,7 @@ function trimCanvasWhitespace(source,dpi=FACSIMILE_DPI,safetyMarginMm=1.5,thresh
   const c=document.createElement('canvas');c.width=tw;c.height=th;c.getContext('2d').drawImage(source,minX,minY,tw,th,0,0,tw,th);
   return {canvas:c,changed:true};
 }
-function canvasFromDataUrl(url){return new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);resolve(c)};img.onerror=reject;img.src=url})}
+function canvasFromDataUrl(url){return new Promise((resolve,reject)=>{if(!url){reject(new Error('Fac-símile sem imagem armazenada.'));return}const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);resolve(c)};img.onerror=()=>reject(new Error('Não foi possível ler a imagem do fac-símile armazenado no projeto.'));img.src=url})}
 function setFacsimilePreview(original,trimmed,trimEnabled,changed){
   $('facOriginal').src=original.toDataURL('image/png');
   $('facTrim').disabled=!changed;
@@ -318,8 +361,8 @@ async function chooseFont(){
 function updateFontLabel(){$('fontLabel').textContent=`Fonte do documento: ${state.selectedFont}`}
 $('fontBtn').onclick=chooseFont; updateFontLabel();
 
-$('saveProjectBtn').onclick=async()=>{const project={format:'MR Excertos Web',version:'1.0',pdfName:state.pdfName,printedPages:state.printedPages,requestedPages:state.requestedPages,items:state.items,selectedFont:state.selectedFont};downloadBlob(new Blob([JSON.stringify(project,null,2)],{type:'application/json'}),`${pageRangeName()}.mrproj.json`);await markClean();setStatus('Projeto salvo. A proteção contra saída será reativada quando houver nova alteração.')};
-$('projectInput').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;const p=migrateProject(JSON.parse(await f.text()));state.pdf=null;state.pdfName=p.pdfName||'';state.printedPages=p.printedPages||{};state.requestedPages=p.requestedPages||[];state.items=p.items||[];state.selectedFont=p.selectedFont||'Times New Roman';state.selectedItem=state.items.length?0:-1;state.pending=null;projectDirty=false;refreshProjectUiWithoutPdf();await clearRecovery();alert(`Projeto aberto. PDF associado: ${p.pdfName||'não informado'}. Abra o PDF original para continuar a selecionar trechos.`)});
+$('saveProjectBtn').onclick=async()=>{const project={format:'MR Excertos Web',version:'1.0',pdfName:state.pdfName,sourceSha256:state.sourceSha256,printedPages:state.printedPages,requestedPages:state.requestedPages,items:state.items,selectedFont:state.selectedFont};downloadBlob(new Blob([JSON.stringify(project,null,2)],{type:'application/json'}),`${pageRangeName()}.mrproj.json`);await markClean();setStatus('Projeto salvo. A proteção contra saída será reativada quando houver nova alteração.')};
+$('projectInput').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;const p=migrateProject(JSON.parse(await f.text()));state.pdf=null;state.pdfName=p.pdfName||'';state.sourceSha256=p.sourceSha256||'';state.importedFromDesktop=!!p.importedFromDesktop;state.printedPages=p.printedPages||{};state.requestedPages=p.requestedPages||[];state.items=p.items||[];state.selectedFont=p.selectedFont||'Times New Roman';state.selectedItem=state.items.length?0:-1;state.pending=null;projectDirty=false;refreshProjectUiWithoutPdf();await clearRecovery();alert(`Projeto aberto. PDF associado: ${p.pdfName||'não informado'}. Abra o PDF original para continuar a selecionar trechos.`)});
 
 // ----- Geração ODT a partir do mesmo modelo material da edição Linux -----
 const NS={office:'urn:oasis:names:tc:opendocument:xmlns:office:1.0',style:'urn:oasis:names:tc:opendocument:xmlns:style:1.0',text:'urn:oasis:names:tc:opendocument:xmlns:text:1.0',draw:'urn:oasis:names:tc:opendocument:xmlns:drawing:1.0',svg:'urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0',fo:'urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0',xlink:'http://www.w3.org/1999/xlink',manifest:'urn:oasis:names:tc:opendocument:xmlns:manifest:1.0'};
@@ -347,7 +390,7 @@ function applyFontToStyles(stylesDoc){
   for(const st of [...stylesDoc.getElementsByTagNameNS(NS.style,'style')]){if(!named.includes(st.getAttributeNS(NS.style,'name')))continue;const tp=[...st.children].find(e=>e.namespaceURI===NS.style&&e.localName==='text-properties');if(tp){setAttr(tp,NS.fo,'fo:font-family',state.selectedFont);setAttr(tp,NS.style,'style:font-name','MRFonteTexto')}}
   ensureAntiphonLabelStyle(stylesDoc);
 }
-async function facsimileForExport(item){const orig=await canvasFromDataUrl(item.image);if(item.trimWhitespace===false)return orig;return trimCanvasWhitespace(orig,Number(item.imageDpi)||LEGACY_FACSIMILE_DPI).canvas}
+async function facsimileForExport(item){const rect=item.legacyRect||item.rect;const orig=item.image?await canvasFromDataUrl(item.image):await cropPdfRectAtDpi(item.pdfPage,rect,Number(item.imageDpi)||FACSIMILE_DPI);if(item.trimWhitespace===false)return orig;return trimCanvasWhitespace(orig,Number(item.imageDpi)||FACSIMILE_DPI).canvas}
 async function makeOdt(){
   const tpl=await fetch('assets/Modelo_MR_Excertos.odt');if(!tpl.ok)throw new Error('ODT-modelo não encontrado.');const zip=await JSZip.loadAsync(await tpl.arrayBuffer());
   const mime=await zip.file('mimetype').async('string');zip.file('mimetype',mime,{compression:'STORE'});
@@ -356,9 +399,12 @@ async function makeOdt(){
   const body=contentDoc.getElementsByTagNameNS(NS.office,'text')[0]; while(body.firstChild)body.removeChild(body.firstChild);
   const manifestRoot=manifestDoc.documentElement; let lastPrinted=null,imgN=0;
   const map={'Texto litúrgico':'MR_Texto_liturgico','Cabeçalho do dia':'MR_Cabecalho_dia','Rubrica':'MR_Rubrica','Títulos':'MR_Titulos'};
-  for(const it of state.items){
-    if(it.printedPage&&it.printedPage!==lastPrinted){addParagraph(contentDoc,body,'MR_Referencia_pagina',`[MR, p. ${it.printedPage}]`);lastPrinted=it.printedPage}
+  for(let itemIndex=0;itemIndex<state.items.length;itemIndex++){
+    const it=state.items[itemIndex];
     if(it.type==='spacer'){addParagraph(contentDoc,body,'MR_Espacador','');continue}
+    const printed=Number(it.printedPage)||Number(state.printedPages[it.pdfPage])||0;
+    if(!printed)throw new Error(`O item ${itemIndex+1} não possui página impressa do Missal associada.`);
+    if(printed!==lastPrinted){addParagraph(contentDoc,body,'MR_Referencia_pagina',`[MR, p. ${printed}]`);lastPrinted=printed}
     if(it.type==='facsimile'){
       imgN++;const c=await facsimileForExport(it);const name=`Pictures/facsimile_${String(imgN).padStart(4,'0')}.png`;const b64=c.toDataURL('image/png').split(',')[1];zip.file(name,b64,{base64:true});
       const p=xel(contentDoc,NS.text,'text:p');setAttr(p,NS.text,'text:style-name','MR_Facsimile');body.appendChild(p);
@@ -376,7 +422,7 @@ $('odtBtn').onclick=async()=>{
   if(!state.items.length){alert('O documento ainda está vazio.');return}
   const pending=state.items.filter(i=>i.type!=='facsimile'&&i.type!=='spacer'&&!i.reviewed).length;
   if(pending&&!confirm(`Há ${pending} trecho(s) textual(is) ainda não conferido(s) com o original. Gerar mesmo assim?`))return;
-  try{downloadBlob(await makeOdt(),`${pageRangeName()}.odt`)}catch(err){alert('Não foi possível gerar o ODT: '+err.message)}
+  try{downloadBlob(await makeOdt(),`${pageRangeName()}.odt`)}catch(err){console.error(err);alert('Não foi possível gerar o ODT: '+errorText(err))}
 };
 
 window.addEventListener('beforeunload',e=>{if(hasUnsavedWork()){e.preventDefault();e.returnValue=''}});

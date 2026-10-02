@@ -93,6 +93,9 @@ export function migrateProject(project){
       legacyRect:Array.isArray(i.legacyRect)?i.legacyRect.map(Number):(Array.isArray(i.rect)?i.rect.map(Number):null)
     };
   });
+  for(const item of items){
+    if(Number(item.pdfPage)>0&&Number(item.printedPage)>0&&!printedPages[item.pdfPage])printedPages[item.pdfPage]=Number(item.printedPage);
+  }
   const sourcePath=String(raw.source_pdf||'');
   const desktopPdfName=sourcePath.split(/[\\/]/).filter(Boolean).pop()||'';
   const requestedPages=[...new Set([...(raw.requested_pages||[]),...(raw.requestedPages||[])].map(Number).filter(n=>n>0))].sort((a,b)=>a-b);

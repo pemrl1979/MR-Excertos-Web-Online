@@ -55,45 +55,56 @@ export function numberPrintedInterval(state,pages,startMr){
 }
 export function migrateProject(project){
   const raw=project||{};
-  const desktop=raw.format!=='MR Excertos Web' && (
+  const styleFor={text:'Texto litúrgico',day_heading:'Cabeçalho do dia',antiphon:'Antífona',rubric:'Rubrica',title:'Títulos',titles:'Títulos'};
+  const desktopTopLevel=
     Object.prototype.hasOwnProperty.call(raw,'page_map') ||
     Object.prototype.hasOwnProperty.call(raw,'requested_pages') ||
     Object.prototype.hasOwnProperty.call(raw,'source_pdf') ||
-    (raw.items||[]).some(i=>Object.prototype.hasOwnProperty.call(i||{},'pdf_page')||Object.prototype.hasOwnProperty.call(i||{},'mr_page'))
-  );
-  if(desktop){
-    const printedPages={};
-    for(const [pdf,mr] of Object.entries(raw.page_map||{})){
+    Object.prototype.hasOwnProperty.call(raw,'source_sha256') ||
+    Object.prototype.hasOwnProperty.call(raw,'selected_font') ||
+    Object.prototype.hasOwnProperty.call(raw,'preferred_font');
+  const printedPages={};
+  for(const source of [raw.page_map||{},raw.printedPages||{}]){
+    for(const [pdf,mr] of Object.entries(source)){
       const p=Number(pdf),m=Number(mr);if(p>0&&m>0)printedPages[p]=m;
     }
-    const styleFor={text:'Texto litúrgico',day_heading:'Cabeçalho do dia',antiphon:'Antífona',rubric:'Rubrica',title:'Títulos',titles:'Títulos'};
-    const items=(raw.items||[]).map((source,index)=>{
-      const i=source||{},kind=i.type;
-      if(kind==='spacer')return {type:'spacer',style:'Espaçador',reviewed:true};
-      const pdfPage=Number(i.pdf_page)||0;
-      const printedPage=Number(i.mr_page)||Number(printedPages[pdfPage])||0;
-      if(kind==='facsimile'){
-        return {type:'facsimile',style:'Fac-símile',pdfPage,printedPage,legacyRect:Array.isArray(i.rect)?i.rect.map(Number):null,reviewed:true,trimWhitespace:i.trim_whitespace!==false};
-      }
-      const style=styleFor[kind];
-      if(!style)throw new Error(`Tipo de trecho do projeto desktop não reconhecido no item ${index+1}: ${kind}`);
-      return {type:'text',style,pdfPage,printedPage,text:String(i.text||''),reviewed:!!i.reviewed,legacyRect:Array.isArray(i.rect)?i.rect.map(Number):null};
-    });
-    const sourcePath=String(raw.source_pdf||'');
-    const pdfName=sourcePath.split(/[\\/]/).filter(Boolean).pop()||'';
+  }
+  let importedFromDesktop=!!raw.importedFromDesktop||desktopTopLevel;
+  const items=(raw.items||[]).map((source,index)=>{
+    const i=source||{};
+    const desktopItem=Object.prototype.hasOwnProperty.call(i,'pdf_page')||Object.prototype.hasOwnProperty.call(i,'mr_page')||Object.prototype.hasOwnProperty.call(i,'trim_whitespace')||(!i.style&&Object.prototype.hasOwnProperty.call(styleFor,i.type));
+    if(desktopItem)importedFromDesktop=true;
+    const kind=i.type;
+    if(kind==='spacer')return {...i,type:'spacer',style:'Espaçador',pdfPage:0,printedPage:0,reviewed:true};
+    const pdfPage=Number(i.pdfPage??i.pdf_page)||0;
+    const printedPage=Number(i.printedPage??i.mr_page)||Number(printedPages[pdfPage])||0;
+    if(kind==='facsimile'){
+      return {
+        ...i,type:'facsimile',style:'Fac-símile',pdfPage,printedPage,
+        image:i.image||null,imageDpi:Number(i.imageDpi)||0,
+        legacyRect:Array.isArray(i.legacyRect)?i.legacyRect.map(Number):(Array.isArray(i.rect)?i.rect.map(Number):null),
+        reviewed:true,trimWhitespace:i.trimWhitespace!==undefined?i.trimWhitespace:i.trim_whitespace!==false
+      };
+    }
+    const style=i.style||styleFor[kind];
+    if(!style)throw new Error(`Tipo de trecho do projeto não reconhecido no item ${index+1}: ${kind}`);
     return {
-      format:'MR Excertos Web',version:'1.0',pdfName,sourceSha256:String(raw.source_sha256||''),
-      printedPages,requestedPages:(raw.requested_pages||[]).map(Number).filter(n=>n>0),
-      items,selectedFont:raw.selected_font||raw.preferred_font||'Times New Roman',importedFromDesktop:true
+      ...i,type:'text',style,pdfPage,printedPage,text:String(i.text||''),reviewed:!!i.reviewed,
+      legacyRect:Array.isArray(i.legacyRect)?i.legacyRect.map(Number):(Array.isArray(i.rect)?i.rect.map(Number):null)
     };
-  }
-  const p={...raw};
-  p.printedPages=p.printedPages||{};p.items=p.items||[];p.requestedPages=p.requestedPages||[];p.sourceSha256=p.sourceSha256||'';
-  for(const item of p.items){
-    const mapped=Number(p.printedPages[item.pdfPage]||0);
-    if(mapped>0)item.printedPage=mapped;
-  }
-  return p;
+  });
+  const sourcePath=String(raw.source_pdf||'');
+  const desktopPdfName=sourcePath.split(/[\\/]/).filter(Boolean).pop()||'';
+  const requestedPages=[...new Set([...(raw.requested_pages||[]),...(raw.requestedPages||[])].map(Number).filter(n=>n>0))].sort((a,b)=>a-b);
+  return {
+    ...raw,
+    format:'MR Excertos Web',version:'1.0',
+    pdfName:raw.pdfName||desktopPdfName,
+    sourceSha256:raw.sourceSha256||raw.source_sha256||'',
+    printedPages,requestedPages,items,
+    selectedFont:raw.selectedFont||raw.selected_font||raw.preferred_font||'Times New Roman',
+    importedFromDesktop
+  };
 }
 
 export function shouldPreserveProjectOnPdfOpen(hasData,currentPdf,storedPdfName,newPdfName){

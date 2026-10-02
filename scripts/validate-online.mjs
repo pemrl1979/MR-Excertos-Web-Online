@@ -24,10 +24,19 @@ const app=fs.readFileSync(path.join(web,'app.js'),'utf8');
 const idx=fs.readFileSync(path.join(web,'index.html'),'utf8');
 const sw=fs.readFileSync(path.join(web,'sw.js'),'utf8');
 const manifest=fs.readFileSync(path.join(web,'manifest.webmanifest'),'utf8');
+const core=fs.readFileSync(path.join(web,'core.mjs'),'utf8');
+const manual=fs.readFileSync(path.join(web,'manual.html'),'utf8');
 if(!idx.includes('MR Excertos Web 1.0'))throw new Error('Identificação 1.0 ausente');
 if(!app.includes("dataset.mrReady='1.0'"))throw new Error('Marcador 1.0 ausente');
 if(!sw.includes("mr-excertos-web-1.0"))throw new Error('Cache 1.0 ausente');
 if(!manifest.includes('"start_url": "./"'))throw new Error('start_url não é relativo');
+for(const token of ["version:7","source_pdf","source_sha256","page_map","requested_pages","pdf_page","mr_page","trim_whitespace"]){
+  if(!core.includes(token))throw new Error(`Formato canônico ausente em core.mjs: ${token}`);
+}
+for(const obsolete of ["migrateProject","legacyRect","importedFromDesktop","format:'MR Excertos Web'"]){
+  if(app.includes(obsolete)||core.includes(obsolete))throw new Error(`Resíduo de formato antigo: ${obsolete}`);
+}
+if(!manual.includes('mesmo formato de projeto do MR Excertos desktop 1.0'))throw new Error('Manual não documenta o formato único de projeto');
 for(const [name,text] of [['app.js',app],['sw.js',sw]]){
   if(/https:\/\/(?:cdn\.|cdn\.jsdelivr|tessdata\.)/i.test(text))throw new Error(`${name} contém dependência remota de execução`);
 }

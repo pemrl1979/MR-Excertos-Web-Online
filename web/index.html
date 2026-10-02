@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#6b1f2b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<title>MR Excertos Web</title>
+<link rel="stylesheet" href="style.css">
+<script src="vendor/jszip.min.js"></script>
+</head>
+<body>
+<header>
+  <img src="icons/icon-192.png" alt="" width="44" height="44">
+  <div><h1>MR Excertos Web</h1><p>Seleção e preparação de excertos do Missal Romano</p></div>
+  <button id="installBtn" hidden>Instalar aplicativo</button>
+</header>
+<nav>
+  <label class="filebtn">Abrir PDF<input id="pdfInput" type="file" accept="application/pdf" hidden></label>
+  <label class="filebtn">Abrir projeto<input id="projectInput" type="file" accept="application/json,.json" hidden></label>
+  <button id="saveProjectBtn" disabled>Salvar projeto</button>
+  <button id="odtBtn" disabled>Gerar ODT</button>
+  <button id="helpBtn">Ajuda</button>
+  <span id="status">Nenhum PDF aberto.</span>
+</nav>
+<main>
+  <aside class="left">
+    <h2>Páginas</h2>
+    <div class="pager"><button id="prevBtn" disabled>‹</button><input id="pageNumber" type="number" min="1" value="1"><span id="pageCount">/ 0</span><button id="nextBtn" disabled>›</button></div>
+    <label>Páginas físicas do PDF <input id="pageRange" type="text" inputmode="numeric" placeholder="Ex.: 298, 1024-1026"></label>
+    <button id="defineRangeBtn" disabled>Definir páginas</button>
+    <label>Página impressa do Missal <input id="printedPage" type="number" min="1"></label>
+    <button id="associateBtn" disabled>Associar à página atual</button>
+    <button id="numberRangeBtn" disabled>Numerar o intervalo</button>
+    <p id="rangeSummary" class="hint"></p>
+    <p class="hint">Arraste sobre a página para selecionar uma região. Depois escolha um tipo no painel central.</p>
+  </aside>
+  <section class="center">
+    <div class="styles">
+      <button data-style="Texto litúrgico" disabled>Texto litúrgico</button>
+      <button data-style="Cabeçalho do dia" disabled>Cabeçalho do dia</button>
+      <button data-style="Antífona" disabled>Antífona</button>
+      <button data-style="Rubrica" disabled>Rubrica</button>
+      <button data-style="Títulos" disabled>Títulos</button>
+      <button data-style="Fac-símile" disabled>Fac-símile</button>
+    </div>
+    <div id="viewerWrap"><canvas id="pdfCanvas"></canvas><div id="selection"></div></div>
+    <div id="review" hidden>
+      <h2>Conferência</h2>
+      <p id="reviewSource"></p>
+      <textarea id="reviewText" spellcheck="true"></textarea>
+      <div class="reviewbar"><button id="tipsBtn">Ver dicas</button><span></span><label><input id="checkedOriginal" type="checkbox"> Conferido com o original</label><button id="confirmReview">OK</button><button id="cancelReview">Cancelar</button></div>
+      <div id="tipsBox" hidden></div>
+    </div>
+  </section>
+  <aside class="right">
+    <h2>Documento em construção</h2>
+    <p id="fontLabel" class="fontLabel">Fonte do documento: Times New Roman</p>
+    <button id="fontBtn">Escolher fonte…</button>
+    <ol id="docList"></ol>
+    <div class="gridBtns"><button id="upBtn">↑</button><button id="downBtn">↓</button><button id="reviewBtn">Revisar</button><button id="deleteBtn">Excluir</button></div>
+    <button id="spacerBtn">Espaçador</button>
+  </aside>
+</main>
+<footer>MR Excertos Web 1.0 — processamento do PDF realizado no navegador.</footer>
+
+<dialog id="facDialog" class="wideDialog">
+  <h2>Conferência do fac-símile</h2>
+  <p>Confira a área útil. O aparo remove apenas margens externas claras e conserva uma pequena margem de segurança.</p>
+  <div class="previewGrid">
+    <div><h3>Seleção original</h3><div class="previewPane"><img id="facOriginal" alt="Seleção original"></div></div>
+    <div><h3>Resultado</h3><div class="previewPane"><img id="facResult" alt="Resultado do fac-símile"></div></div>
+  </div>
+  <p id="facDimensions" class="centerText"></p>
+  <div class="dialogBar"><label><input id="facTrim" type="checkbox"> Aparar margens em branco automaticamente</label><span></span><button id="facOk">OK</button><button id="facCancel">Cancelar</button></div>
+</dialog>
+
+<dialog id="fontDialog">
+  <h2>Fonte do documento</h2>
+  <p id="fontNote"></p>
+  <p>Ordem automática: Times New Roman → Arial → Study-Regular → Lora.</p>
+  <label>Fonte <select id="fontSelect"></select></label>
+  <label>Outra fonte instalada <input id="fontCustom" type="text" autocomplete="off" placeholder="Digite o nome exato da família"></label>
+  <p>Prévia:</p><div id="fontPreview" class="fontPreview">O Senhor esteja convosco. Amém. — 123 áéíóú ãõ ç</div>
+  <div class="dialogBar"><span></span><button id="fontOk">OK</button><button id="fontCancel">Cancelar</button></div>
+</dialog>
+
+<dialog id="recoveryDialog">
+  <h2>Recuperação de trabalho</h2>
+  <p id="recoveryInfo">Foi encontrado um trabalho não concluído salvo automaticamente neste navegador.</p>
+  <p>Você pode restaurá-lo ou descartá-lo. Para continuar fazendo novos recortes após restaurar, reabra o PDF original quando solicitado.</p>
+  <div class="dialogBar"><span></span><button id="recoveryRestore">Restaurar trabalho</button><button id="recoveryDiscard">Descartar</button></div>
+</dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

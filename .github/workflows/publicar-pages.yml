@@ -1,0 +1,60 @@
+name: Publicar MR Excertos Web
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Preparar site
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Instalar dependências fixadas
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Incorporar PDF.js, OCR e JSZip
+        run: node scripts/vendor-deps.mjs
+      - name: Testar aplicação
+        run: |
+          node --check web/app.js
+          node web/tests/test_core.mjs
+          node web/tests/test_recovery_static.mjs
+          node web/tests/test_recovery_structure.mjs
+          node scripts/validate-online.mjs
+      - name: Montar site
+        run: |
+          rm -rf _site
+          cp -a web _site
+          rm -rf _site/tests
+          cp COPYING _site/COPYING
+          touch _site/.nojekyll
+          test ! -d _site/tests
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Enviar artefato do Pages
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    name: Publicar
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publicar no GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

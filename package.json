@@ -1,0 +1,13 @@
+{
+  "name": "mr-excertos-web-online",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Build da edição online do MR Excertos Web",
+  "dependencies": {
+    "@tesseract.js-data/por": "1.0.0",
+    "jszip": "3.10.1",
+    "pdfjs-dist": "4.10.38",
+    "tesseract.js": "5.1.1",
+    "tesseract.js-core": "5.1.1"
+  }
+}

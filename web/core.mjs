@@ -53,60 +53,117 @@ export function numberPrintedInterval(state,pages,startMr){
   const start=Number(startMr);if(!(start>0))throw new Error('Informe a página impressa correspondente à primeira página do intervalo.');
   ordered.forEach((pdf,i)=>associatePrintedPage(state,pdf,start+i));
 }
-export function migrateProject(project){
+
+const CANONICAL_TO_STYLE={
+  text:'Texto litúrgico',
+  rubric:'Rubrica',
+  titles:'Títulos',
+  title:'Títulos',
+  day_heading:'Cabeçalho do dia',
+  antiphon:'Antífona'
+};
+const STYLE_TO_CANONICAL={
+  'Texto litúrgico':'text',
+  'Rubrica':'rubric',
+  'Títulos':'titles',
+  'Cabeçalho do dia':'day_heading',
+  'Antífona':'antiphon'
+};
+
+function normalizedRect(rect){
+  if(rect==null)return null;
+  if(!Array.isArray(rect)||rect.length!==4)throw new Error('Projeto inválido: coordenadas de recorte incorretas.');
+  const out=rect.map(Number);
+  if(!out.every(Number.isFinite))throw new Error('Projeto inválido: coordenadas de recorte incorretas.');
+  return out;
+}
+
+export function projectFromCanonical(project){
   const raw=project||{};
-  const styleFor={text:'Texto litúrgico',day_heading:'Cabeçalho do dia',antiphon:'Antífona',rubric:'Rubrica',title:'Títulos',titles:'Títulos'};
-  const desktopTopLevel=
-    Object.prototype.hasOwnProperty.call(raw,'page_map') ||
-    Object.prototype.hasOwnProperty.call(raw,'requested_pages') ||
-    Object.prototype.hasOwnProperty.call(raw,'source_pdf') ||
-    Object.prototype.hasOwnProperty.call(raw,'source_sha256') ||
-    Object.prototype.hasOwnProperty.call(raw,'selected_font') ||
-    Object.prototype.hasOwnProperty.call(raw,'preferred_font');
-  const printedPages={};
-  for(const source of [raw.page_map||{},raw.printedPages||{}]){
-    for(const [pdf,mr] of Object.entries(source)){
-      const p=Number(pdf),m=Number(mr);if(p>0&&m>0)printedPages[p]=m;
-    }
+  const pageMap={};
+  for(const [pdf,mr] of Object.entries(raw.page_map||{})){
+    const p=Number(pdf),m=Number(mr);
+    if(p>0&&m>0)pageMap[p]=m;
   }
-  let importedFromDesktop=!!raw.importedFromDesktop||desktopTopLevel;
-  const items=(raw.items||[]).map((source,index)=>{
-    const i=source||{};
-    const desktopItem=Object.prototype.hasOwnProperty.call(i,'pdf_page')||Object.prototype.hasOwnProperty.call(i,'mr_page')||Object.prototype.hasOwnProperty.call(i,'trim_whitespace')||(!i.style&&Object.prototype.hasOwnProperty.call(styleFor,i.type));
-    if(desktopItem)importedFromDesktop=true;
-    const kind=i.type;
-    if(kind==='spacer')return {...i,type:'spacer',style:'Espaçador',pdfPage:0,printedPage:0,reviewed:true};
-    const pdfPage=Number(i.pdfPage??i.pdf_page)||0;
-    const printedPage=Number(i.printedPage??i.mr_page)||Number(printedPages[pdfPage])||0;
-    if(kind==='facsimile'){
+  const items=(raw.items||[]).map((item,index)=>{
+    const i=item||{};
+    const kind=i.type==='title'?'titles':i.type;
+    if(kind==='spacer'){
       return {
-        ...i,type:'facsimile',style:'Fac-símile',pdfPage,printedPage,
-        image:i.image||null,imageDpi:Number(i.imageDpi)||0,
-        legacyRect:Array.isArray(i.legacyRect)?i.legacyRect.map(Number):(Array.isArray(i.rect)?i.rect.map(Number):null),
-        reviewed:true,trimWhitespace:i.trimWhitespace!==undefined?i.trimWhitespace:i.trim_whitespace!==false
+        type:'spacer',style:'Espaçador',id:String(i.id||''),pdfPage:0,printedPage:0,rect:null,text:'',
+        reviewed:true,trimWhitespace:true
       };
     }
-    const style=i.style||styleFor[kind];
-    if(!style)throw new Error(`Tipo de trecho do projeto não reconhecido no item ${index+1}: ${kind}`);
+    const pdfPage=Number(i.pdf_page)||0;
+    const printedPage=Number(i.mr_page)||Number(pageMap[pdfPage])||0;
+    if(!(pdfPage>0))throw new Error(`Projeto inválido: item ${index+1} sem página física do PDF.`);
+    if(!(printedPage>0))throw new Error(`Projeto inválido: item ${index+1} sem página impressa do Missal.`);
+    if(kind==='facsimile'){
+      return {
+        type:'facsimile',style:'Fac-símile',id:String(i.id||''),pdfPage,printedPage,rect:normalizedRect(i.rect),
+        text:'',reviewed:!!i.reviewed,trimWhitespace:i.trim_whitespace!==false,image:null,imageDpi:0
+      };
+    }
+    const style=CANONICAL_TO_STYLE[kind];
+    if(!style)throw new Error(`Tipo de trecho não reconhecido no item ${index+1}: ${i.type}`);
     return {
-      ...i,type:'text',style,pdfPage,printedPage,text:String(i.text||''),reviewed:!!i.reviewed,
-      legacyRect:Array.isArray(i.legacyRect)?i.legacyRect.map(Number):(Array.isArray(i.rect)?i.rect.map(Number):null)
+      type:'text',canonicalType:kind,style,id:String(i.id||''),pdfPage,printedPage,rect:normalizedRect(i.rect),
+      text:String(i.text||''),reviewed:!!i.reviewed,trimWhitespace:i.trim_whitespace!==false
     };
   });
-  for(const item of items){
-    if(Number(item.pdfPage)>0&&Number(item.printedPage)>0&&!printedPages[item.pdfPage])printedPages[item.pdfPage]=Number(item.printedPage);
-  }
-  const sourcePath=String(raw.source_pdf||'');
-  const desktopPdfName=sourcePath.split(/[\\/]/).filter(Boolean).pop()||'';
-  const requestedPages=[...new Set([...(raw.requested_pages||[]),...(raw.requestedPages||[])].map(Number).filter(n=>n>0))].sort((a,b)=>a-b);
+  const sourcePdf=String(raw.source_pdf||'');
+  const pdfName=sourcePdf.split(/[\\/]/).filter(Boolean).pop()||'';
   return {
-    ...raw,
-    format:'MR Excertos Web',version:'1.0',
-    pdfName:raw.pdfName||desktopPdfName,
-    sourceSha256:raw.sourceSha256||raw.source_sha256||'',
-    printedPages,requestedPages,items,
-    selectedFont:raw.selectedFont||raw.selected_font||raw.preferred_font||'Times New Roman',
-    importedFromDesktop
+    title:String(raw.title||'Excertos do Missal Romano'),
+    sourcePdf,pdfName,sourceSha256:String(raw.source_sha256||''),
+    printedPages:pageMap,items,
+    preferredFont:String(raw.preferred_font||'Times New Roman'),
+    selectedFont:String(raw.selected_font||raw.preferred_font||'Times New Roman'),
+    monoFont:String(raw.mono_font||''),
+    fontManual:!!raw.font_manual,
+    requestedPages:[...new Set((raw.requested_pages||[]).map(Number).filter(n=>n>0))].sort((a,b)=>a-b)
+  };
+}
+
+export function projectToCanonical(state){
+  const items=(state.items||[]).map((item,index)=>{
+    const i=item||{};
+    if(i.type==='spacer'){
+      return {
+        type:'spacer',pdf_page:0,mr_page:0,rect:null,text:'',id:String(i.id||''),
+        reviewed:true,trim_whitespace:true
+      };
+    }
+    const pdfPage=Number(i.pdfPage)||0;
+    const mrPage=Number(i.printedPage)||Number(state.printedPages?.[pdfPage])||0;
+    if(!(pdfPage>0))throw new Error(`Não é possível salvar: item ${index+1} sem página física do PDF.`);
+    if(!(mrPage>0))throw new Error(`Não é possível salvar: item ${index+1} sem página impressa do Missal.`);
+    const rect=normalizedRect(i.rect);
+    let kind;
+    if(i.type==='facsimile')kind='facsimile';
+    else kind=STYLE_TO_CANONICAL[i.style]||i.canonicalType;
+    if(!kind)throw new Error(`Não é possível salvar: estilo não reconhecido no item ${index+1}.`);
+    return {
+      type:kind,pdf_page:pdfPage,mr_page:mrPage,rect,text:i.type==='facsimile'?'':String(i.text||''),
+      id:String(i.id||''),reviewed:!!i.reviewed,trim_whitespace:i.trimWhitespace!==false
+    };
+  });
+  const pageMap={};
+  for(const [pdf,mr] of Object.entries(state.printedPages||{})){
+    const p=Number(pdf),m=Number(mr);if(p>0&&m>0)pageMap[String(p)]=m;
+  }
+  return {
+    version:7,
+    title:String(state.title||'Excertos do Missal Romano'),
+    source_pdf:String(state.sourcePdf||state.pdfName||''),
+    source_sha256:String(state.sourceSha256||''),
+    page_map:pageMap,
+    items,
+    preferred_font:String(state.preferredFont||'Times New Roman'),
+    selected_font:String(state.selectedFont||''),
+    mono_font:String(state.monoFont||''),
+    font_manual:!!state.fontManual,
+    requested_pages:[...new Set((state.requestedPages||[]).map(Number).filter(n=>n>0))].sort((a,b)=>a-b)
   };
 }
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {parsePageSpec,isContiguous,compactPages,suggestedBaseName,associatePrintedPage,numberPrintedInterval,editorBreak,paragraphGroups,TEXT_STYLES} from '../core.mjs';
+import {parsePageSpec,isContiguous,compactPages,suggestedBaseName,associatePrintedPage,numberPrintedInterval,shouldPreserveProjectOnPdfOpen,editorBreak,paragraphGroups,TEXT_STYLES} from '../core.mjs';
 
 assert.deepEqual(parsePageSpec('298, 1024-1026', 1200), [298,1024,1025,1026]);
 assert.equal(isContiguous([10,11,12]), true);
@@ -18,4 +18,9 @@ for(const style of TEXT_STYLES){
 assert.equal(editorBreak('Enter',false,'Fac-símile'),null);
 assert.deepEqual(paragraphGroups('Primeira linha\ncontinuação\n\nSegundo parágrafo'),['Primeira linha\ncontinuação','Segundo parágrafo']);
 assert.deepEqual(paragraphGroups('A\n \nB\n\n\nC'),['A','B','C']);
+
+assert.equal(shouldPreserveProjectOnPdfOpen(true,null,'Missal antigo.pdf','Missal renomeado.pdf'),true,'projeto aberto deve sobreviver a PDF renomeado');
+assert.equal(shouldPreserveProjectOnPdfOpen(true,{},'Missal.pdf','Missal.pdf'),true,'mesmo PDF carregado deve preservar o projeto');
+assert.equal(shouldPreserveProjectOnPdfOpen(false,null,'','Outro.pdf'),false,'sem dados de projeto não deve preservar estado');
+assert.equal(shouldPreserveProjectOnPdfOpen(true,{},'Missal.pdf','Outro.pdf'),false,'troca deliberada de PDF já carregado deve iniciar novo trabalho');
 console.log('test_core.mjs: OK');

@@ -36,6 +36,19 @@ assert.equal(desktop.items[2].type,'facsimile');
 assert.deepEqual(desktop.items[2].legacyRect,[40,190,490,258]);
 assert.equal(desktop.items[2].trimWhitespace,false);
 assert.equal(suggestedBaseName(desktop),'MR_recorte_p276-278');
+const hybrid=migrateProject({
+  format:'MR Excertos Web',version:'1.0',pdfName:'Missal.pdf',
+  printedPages:{20:400},
+  items:[
+    {type:'text',pdf_page:10,mr_page:300,text:'Importado',reviewed:true},
+    {type:'text',style:'Texto litúrgico',pdfPage:20,printedPage:400,text:'Novo',reviewed:true}
+  ]
+});
+assert.equal(hybrid.items[0].pdfPage,10);
+assert.equal(hybrid.items[0].printedPage,300);
+assert.equal(hybrid.items[0].style,'Texto litúrgico');
+assert.equal(hybrid.items[1].printedPage,400);
+assert.equal(suggestedBaseName(hybrid),'MR_recorte_p300_400');
 
 for(const style of TEXT_STYLES){
   assert.equal(editorBreak('Enter',false,style),'\n\n',`${style}: Enter`);

@@ -1,4 +1,4 @@
-const CACHE='mr-excertos-web-1.0';
+const CACHE='mr-excertos-web-1.0-r2';
 const LOCAL=[
   './','./index.html','./style.css','./app.js','./core.mjs','./manual.html','./manifest.webmanifest',
   './icons/icon-192.png','./icons/icon-512.png','./assets/Modelo_MR_Excertos.odt','./vendor/jszip.min.js',
